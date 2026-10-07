@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from .auth import load_auth
 from .client import IntervalsClient
 from .dsl import Repeat, Step, render_steps
+from .safety import check_event_name, forbid, prefixed
 from .units import mps_to_pace, pace_to_mps, pace_unit_for
 
 mcp = FastMCP("intervals-icu")
@@ -161,6 +162,15 @@ async def list_planned_workouts(oldest: str, newest: str) -> list[dict]:
     return [_pick(e, _EVENT_FIELDS) for e in data]
 
 
+@mcp.tool()
+async def get_planned_workout(event_id: int) -> dict:
+    """One calendar event verbatim, including `workout_doc`: the structured document
+    intervals.icu builds from the workout text (steps, targets, units). Use it to compare
+    how two workouts were parsed, e.g. why one draws the interval chart and another not.
+    """
+    return await client().get(f"/athlete/0/events/{event_id}")
+
+
 def _wx(p: dict) -> dict:
     out = _pick(p, ("id", "temp", "feels_like", "humidity", "dew_point", "wind_speed",
                     "wind_gust", "rain", "snow", "clouds", "sunrise", "sunset"))
@@ -235,7 +245,7 @@ def _event(w: Workout) -> dict:
         "start_date_local": _start(w.start),
         "category": "WORKOUT",
         "type": w.sport,
-        "name": w.name,
+        "name": prefixed(w.name),
         "description": "\n\n".join(parts),
     }
     optional = {
@@ -304,6 +314,7 @@ async def create_calendar_entry(
       normally; pass `end` (YYYY-MM-DD, last day) for multi-day periods.
     start: 'YYYY-MM-DD' or full ISO datetime.
     """
+    forbid("create_calendar_entry")
     body = {"category": category, "start_date_local": _start(start), "name": name}
     if end:
         # intervals.icu's end is exclusive: a period ending on day X ends at X+1 00:00.
@@ -321,7 +332,10 @@ async def update_planned_workout(
     """Change an existing planned workout (write). `changes` sets raw event fields, e.g.
     reschedule with {"start_date_local": "2026-10-09T07:00:00"} or {"name": "..."}.
     `steps` replaces the workout content (same step format as create_workouts)."""
+    check_event_name((await client().get(f"/athlete/0/events/{event_id}")).get("name"))
     body = dict(changes or {})
+    if "name" in body:
+        body["name"] = prefixed(body["name"])
     if steps is not None:
         body["description"] = render_steps(steps)
     return _pick(await client().put(f"/athlete/0/events/{event_id}", json=body), _EVENT_FIELDS)
@@ -330,6 +344,7 @@ async def update_planned_workout(
 @mcp.tool()
 async def delete_planned_workout(event_id: int) -> str:
     """Delete a planned workout from the calendar (write, irreversible)."""
+    check_event_name((await client().get(f"/athlete/0/events/{event_id}")).get("name"))
     await client().delete(f"/athlete/0/events/{event_id}")
     return f"Deleted event {event_id}"
 
@@ -352,6 +367,7 @@ async def update_sport_settings(
     Only pass fields the athlete explicitly gave or agreed to; confirm before changing.
     Past activities keep their old zones.
     """
+    forbid("update_sport_settings")
     body: dict = {}
     for k, v in {"ftp": ftp, "indoor_ftp": indoor_ftp, "lthr": lthr, "max_hr": max_hr}.items():
         if v is not None:
@@ -400,6 +416,7 @@ async def log_wellness(
     If the athlete locked the day in intervals.icu, nothing can be written; they must
     unlock it on the website first (this tool reports when that happens).
     """
+    forbid("log_wellness")
     fields = {
         "soreness": soreness, "fatigue": fatigue, "stress": stress, "mood": mood,
         "motivation": motivation, "injury": injury, "sleepQuality": sleep_quality,
