@@ -24,14 +24,28 @@ class ApiKeyAuth:
         return self._auth
 
 
+class BearerAuth:
+    """OAuth access token, e.g. one an app obtained through intervals.icu's OAuth flow."""
+
+    def __init__(self, token: str):
+        self._token = token
+
+    def apply(self, headers: dict[str, str]) -> httpx.Auth | None:
+        headers["Authorization"] = f"Bearer {self._token}"
+        return None
+
+
 # class OAuthAuth: planned. Auth-code flow, token kept in the OS keyring,
 # refreshed transparently. Needs a registered intervals.icu OAuth app first.
 
 
 def load_auth() -> AuthProvider:
+    token = os.environ.get("INTERVALS_ACCESS_TOKEN")
+    if token:
+        return BearerAuth(token)
     key = os.environ.get("INTERVALS_API_KEY")
     if key:
         return ApiKeyAuth(key)
     raise RuntimeError(
-        "No credentials. Set INTERVALS_API_KEY (dev) — OAuth login is not built yet."
+        "No credentials. Set INTERVALS_ACCESS_TOKEN (OAuth) or INTERVALS_API_KEY (dev)."
     )

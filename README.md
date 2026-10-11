@@ -23,8 +23,10 @@ uv sync
 uv run --with pytest pytest
 ```
 
-Authentication currently uses a personal API key (intervals.icu → Settings → Developer
-Settings), for development only. OAuth login is planned so users won't need a key.
+Authentication: set `INTERVALS_ACCESS_TOKEN` to an intervals.icu OAuth access token (how an
+app such as MyCoachLM runs this server for its athletes), or `INTERVALS_API_KEY` to a personal
+API key (intervals.icu -> Settings -> Developer Settings) for development. The token wins when
+both are set.
 
 ```bash
 INTERVALS_API_KEY=your_key uv run mcp dev src/intervals_mcp/server.py
